@@ -66,7 +66,7 @@ export const LandingPage: React.FC = () => {
             {/* Pill Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-950/60 border border-purple-800/60 text-purple-300 text-xs font-semibold backdrop-blur-sm">
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              <span>Your AI-Powered Study Companion</span>
+              <span>Your Local Study Planner</span>
             </div>
 
             {/* Headline */}
@@ -79,8 +79,8 @@ export const LandingPage: React.FC = () => {
 
             {/* Description */}
             <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-xl">
-              Organize your subjects, track assignments, prepare for exams and get personalized
-              study plans with AI — all in one place.
+              Organize your subjects, track assignments, prepare for exams and build a practical
+              study plan — all in one place.
             </p>
 
             {/* Action Buttons */}
@@ -108,7 +108,7 @@ export const LandingPage: React.FC = () => {
             <div className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-medium text-slate-300">
               <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-900/60 border border-slate-800">
                 <BrainCircuit className="w-4 h-4 text-purple-400" />
-                <span>AI Study Plans</span>
+                <span>Study Plans</span>
               </div>
               <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-900/60 border border-slate-800">
                 <TrendingUp className="w-4 h-4 text-emerald-400" />
@@ -241,11 +241,11 @@ export const LandingPage: React.FC = () => {
           {[
             { id: 'dashboard', title: '2. Dashboard', desc: 'Daily plan, metrics & 7-day study streak', icon: '📊' },
             { id: 'subjects', title: '3. Subjects', desc: 'Track chapters and completion across topics', icon: '📚' },
-            { id: 'study-plan', title: '4. AI Study Plan', desc: 'AI-tailored revision routines for exam success', icon: '✨' },
+            { id: 'study-plan', title: '4. Study Plan', desc: 'A subject-based revision routine for exam preparation', icon: '✨' },
             { id: 'calendar', title: '5. Calendar', desc: 'Color-coded weekly timeline & hourly blocks', icon: '🗓️' },
             { id: 'assignments', title: '6. Assignments & Exams', desc: 'Countdown badges & priority-sorted tasks', icon: '📝' },
             { id: 'progress', title: '7. Progress Analytics', desc: 'Radial gauge & subject breakdown analytics', icon: '📈' },
-            { id: 'ai-assistant', title: '8. AI Assistant', desc: 'Smart tutor for doubts, questions & summaries', icon: '🤖' },
+            { id: 'ai-assistant', title: '8. Study Helper', desc: 'Local study prompts and simple note summaries', icon: '🤖' },
             { id: 'landing', title: '1. Landing Page', desc: 'You are currently on the Home view', icon: '🏠' },
           ].map((item) => (
             <button

@@ -7,12 +7,18 @@ import {
   Plus,
   Clock,
   Sparkles,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Trash2
 } from 'lucide-react';
 
 export const CalendarView: React.FC = () => {
-  const { calendarEvents, addCalendarEvent } = useApp();
-  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+  const { calendarEvents, addCalendarEvent, deleteCalendarEvent } = useApp();
+  const mondayOf = (value: Date) => {
+    const date = new Date(value); date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    return date;
+  };
+  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Form states for adding custom event
@@ -22,15 +28,11 @@ export const CalendarView: React.FC = () => {
   const [eventStartHour, setEventStartHour] = useState(10);
   const [eventDuration, setEventDuration] = useState(2);
 
-  const days = [
-    { name: 'Mon', date: 23 },
-    { name: 'Tue', date: 24 },
-    { name: 'Wed', date: 25 },
-    { name: 'Thu', date: 26 },
-    { name: 'Fri', date: 27 },
-    { name: 'Sat', date: 28 },
-    { name: 'Sun', date: 29 },
-  ];
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart); date.setDate(weekStart.getDate() + index);
+    return { name: date.toLocaleDateString(undefined, { weekday: 'short' }), date: date.getDate() };
+  });
+  const weekLabel = `${weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${new Date(weekStart.getTime() + 6 * 86400000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
   const timeSlots = [
     { label: '8 AM', hour: 8 },
@@ -107,40 +109,20 @@ export const CalendarView: React.FC = () => {
         {/* Center Date Switcher */}
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-            <button className="px-3 py-1 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100">
+            <button onClick={() => setWeekStart(mondayOf(new Date()))} className="px-3 py-1 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100">
               Today
             </button>
-            <button className="p-1 rounded-lg text-slate-500 hover:bg-slate-100">
+            <button onClick={() => setWeekStart(date => new Date(date.getTime() - 7 * 86400000))} className="p-1 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Previous week">
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <button className="p-1 rounded-lg text-slate-500 hover:bg-slate-100">
+            <button onClick={() => setWeekStart(date => new Date(date.getTime() + 7 * 86400000))} className="p-1 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Next week">
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
 
           <span className="text-xs sm:text-sm font-bold text-slate-800 px-2">
-            Oct 23 – Oct 29, 2026
+            {weekLabel}
           </span>
-
-          {/* Week/Month Toggle */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-            <button
-              onClick={() => setViewMode('week')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'week' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              Week
-            </button>
-            <button
-              onClick={() => setViewMode('month')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'month' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              Month
-            </button>
-          </div>
 
           <button
             onClick={() => setShowAddModal(true)}
@@ -211,7 +193,17 @@ export const CalendarView: React.FC = () => {
                               key={evt.id}
                               className={`p-2 rounded-xl text-left border text-xs shadow-xs transition-transform hover:scale-[1.02] cursor-pointer ${style.bg} ${style.border} ${style.text}`}
                             >
-                              <p className="font-bold leading-tight truncate">{evt.title}</p>
+                              <div className="flex items-start justify-between gap-1">
+                                <p className="font-bold leading-tight truncate">{evt.title}</p>
+                                <button
+                                  type="button"
+                                  aria-label={`Delete ${evt.title}`}
+                                  onClick={() => deleteCalendarEvent(evt.id)}
+                                  className="shrink-0 text-slate-500 hover:text-rose-700"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                               <p className="text-[10px] opacity-75 mt-0.5">{evt.timeLabel}</p>
                             </div>
                           );

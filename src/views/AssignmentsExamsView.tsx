@@ -8,7 +8,8 @@ import {
   Clock,
   AlertCircle,
   X,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 
 export const AssignmentsExamsView: React.FC = () => {
@@ -16,8 +17,10 @@ export const AssignmentsExamsView: React.FC = () => {
     assignments,
     toggleAssignment,
     addAssignment,
+    deleteAssignment,
     exams,
     addExam,
+    deleteExam,
     setCurrentPage
   } = useApp();
 
@@ -32,8 +35,25 @@ export const AssignmentsExamsView: React.FC = () => {
 
   // New exam form
   const [examTitle, setExamTitle] = useState('');
-  const [examDate, setExamDate] = useState('');
-  const [examDaysLeft, setExamDaysLeft] = useState(14);
+  const [examDate, setExamDate] = useState(() => {
+    const date = new Date(); date.setDate(date.getDate() + 14);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
+
+  const dateLabel = (value: string) => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  const daysUntil = (value: string) => {
+    const parts = value.split('-').map(Number);
+    const target = parts.length === 3
+      ? new Date(parts[0], parts[1] - 1, parts[2])
+      : new Date(value);
+    if (Number.isNaN(target.getTime())) return 0;
+    target.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.ceil((target.getTime() - today.getTime()) / 86400000);
+  };
 
   const filteredAssignments = assignments.filter((a) => {
     if (activeTab === 'Pending') return !a.completed;
@@ -44,7 +64,7 @@ export const AssignmentsExamsView: React.FC = () => {
   const handleCreateAssignment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!assignTitle.trim()) return;
-    addAssignment(assignTitle, assignDueDate || 'Nov 12, 2026', assignPriority);
+    addAssignment(assignTitle, dateLabel(assignDueDate), assignPriority);
     setAssignTitle('');
     setShowAddAssignment(false);
   };
@@ -52,7 +72,7 @@ export const AssignmentsExamsView: React.FC = () => {
   const handleCreateExam = (e: React.FormEvent) => {
     e.preventDefault();
     if (!examTitle.trim()) return;
-    addExam(examTitle, examDate || 'Dec 05, 2026', Number(examDaysLeft) || 10);
+    addExam(examTitle, dateLabel(examDate), Math.max(0, daysUntil(examDate)));
     setExamTitle('');
     setShowAddExam(false);
   };
@@ -158,7 +178,17 @@ export const AssignmentsExamsView: React.FC = () => {
                 </div>
               </div>
 
-              <div>{priorityBadge(assign.priority)}</div>
+              <div className="flex items-center gap-2">
+                {priorityBadge(assign.priority)}
+                <button
+                  type="button"
+                  aria-label={`Delete ${assign.title}`}
+                  onClick={(event) => { event.stopPropagation(); deleteAssignment(assign.id); }}
+                  className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -189,7 +219,8 @@ export const AssignmentsExamsView: React.FC = () => {
         {/* Exam Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {exams.map((exam) => {
-            const isUrgent = exam.daysLeft <= 10;
+            const daysLeft = daysUntil(exam.date);
+            const isUrgent = daysLeft <= 10;
 
             return (
               <div
@@ -210,15 +241,25 @@ export const AssignmentsExamsView: React.FC = () => {
                   </div>
                 </div>
 
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold border ${
                     isUrgent
                       ? 'bg-rose-50 text-rose-600 border-rose-200 animate-pulse'
                       : 'bg-amber-50 text-amber-600 border-amber-200'
-                  }`}
-                >
-                  {exam.daysLeft} days left
-                </span>
+                    }`}
+                  >
+                    {daysLeft < 0 ? 'Past' : daysLeft === 0 ? 'Today' : `${daysLeft} days left`}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${exam.title}`}
+                    onClick={() => deleteExam(exam.id)}
+                    className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -252,10 +293,9 @@ export const AssignmentsExamsView: React.FC = () => {
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Due Date</label>
                 <input
-                  type="text"
+                  type="date"
                   value={assignDueDate}
                   onChange={(e) => setAssignDueDate(e.target.value)}
-                  placeholder="e.g. Nov 14, 2026"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   required
                 />
@@ -321,23 +361,10 @@ export const AssignmentsExamsView: React.FC = () => {
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Date</label>
                 <input
-                  type="text"
+                  type="date"
                   value={examDate}
                   onChange={(e) => setExamDate(e.target.value)}
-                  placeholder="e.g. Dec 02, 2026"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Days Remaining</label>
-                <input
-                  type="number"
-                  value={examDaysLeft}
-                  onChange={(e) => setExamDaysLeft(Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none"
-                  min="1"
                   required
                 />
               </div>

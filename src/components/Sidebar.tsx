@@ -30,7 +30,7 @@ export const Sidebar: React.FC = () => {
     { id: 'calendar', label: 'Calendar', icon: <CalendarCheck className="w-5 h-5" /> },
     { id: 'study-plan', label: 'Study Plan', icon: <Sparkles className="w-5 h-5" /> },
     { id: 'progress', label: 'Progress', icon: <TrendingUp className="w-5 h-5" /> },
-    { id: 'ai-assistant', label: 'AI Assistant', icon: <Bot className="w-5 h-5" /> },
+    { id: 'ai-assistant', label: 'Study Helper', icon: <Bot className="w-5 h-5" /> },
   ];
 
   const handleNavClick = (id: Page | 'exams') => {

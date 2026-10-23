@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { currentPage, setCurrentPage, searchQuery, setSearchQuery } = useApp();
+  const { currentPage, setCurrentPage, searchQuery, setSearchQuery, subjects, todayTasks, assignments, exams, studyPlan, calendarEvents, syncStatus, syncError, retrySync } = useApp();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showScreenSwitcher, setShowScreenSwitcher] = useState(false);
 
@@ -20,17 +20,30 @@ export const Header: React.FC = () => {
     { id: 'landing', label: '1. Landing Page', tag: 'Public' },
     { id: 'dashboard', label: '2. Dashboard', tag: 'Core' },
     { id: 'subjects', label: '3. Subjects Page', tag: 'Core' },
-    { id: 'study-plan', label: '4. AI Study Plan', tag: 'AI' },
+    { id: 'study-plan', label: '4. Study Plan', tag: 'Plan' },
     { id: 'calendar', label: '5. Calendar / Schedule', tag: 'Tools' },
     { id: 'assignments', label: '6. Assignments & Exams', tag: 'Track' },
     { id: 'progress', label: '7. Progress Analytics', tag: 'Stats' },
-    { id: 'ai-assistant', label: '8. AI Assistant', tag: 'AI' },
+    { id: 'ai-assistant', label: '8. Study Helper', tag: 'Tools' },
   ];
+  const searchResults = searchQuery.trim() ? [
+    ...subjects.map(item => ({ label: item.name, detail: 'Subject', page: 'subjects' as Page })),
+    ...todayTasks.map(item => ({ label: item.title, detail: 'Today’s task', page: 'dashboard' as Page })),
+    ...assignments.map(item => ({ label: item.title, detail: 'Assignment', page: 'assignments' as Page })),
+    ...exams.map(item => ({ label: item.title, detail: 'Exam', page: 'assignments' as Page })),
+    ...studyPlan.flatMap(day => day.tasks.map(task => ({ label: task.text, detail: day.dayLabel, page: 'study-plan' as Page }))),
+    ...calendarEvents.map(item => ({ label: item.title, detail: 'Calendar block', page: 'calendar' as Page })),
+  ].filter(item => `${item.label} ${item.detail}`.toLowerCase().includes(searchQuery.trim().toLowerCase())).slice(0, 8) : [];
 
   return (
     <header className="h-16 bg-white border-b border-slate-100 px-6 flex items-center justify-between sticky top-0 z-20">
       {/* Screen Switcher Badge */}
       <div className="flex items-center gap-3">
+        <div className={`hidden lg:flex items-center gap-1.5 text-[11px] ${syncStatus === 'error' ? 'text-red-600' : syncStatus === 'connected' ? 'text-emerald-700' : 'text-slate-500'}`} title={syncError ?? undefined}>
+          <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'connected' ? 'bg-emerald-500' : syncStatus === 'error' ? 'bg-red-500' : syncStatus === 'connecting' ? 'bg-amber-400' : 'bg-slate-400'}`} />
+          <span>{syncStatus === 'connected' ? 'Synced' : syncStatus === 'connecting' ? 'Connecting' : syncStatus === 'error' ? 'Sync error' : 'Local only'}</span>
+          {syncStatus === 'error' && <button onClick={retrySync} className="underline underline-offset-2">Retry</button>}
+        </div>
         <div className="relative">
           <button
             onClick={() => setShowScreenSwitcher(!showScreenSwitcher)}
@@ -77,28 +90,49 @@ export const Header: React.FC = () => {
       </div>
 
       {/* Center Search Input */}
-      <div className="flex-1 max-w-md mx-4">
+      <div className="flex-1 max-w-md mx-4 relative">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchResults[0]) {
+                setCurrentPage(searchResults[0].page);
+                setSearchQuery('');
+              }
+              if (e.key === 'Escape') setSearchQuery('');
+            }}
             placeholder="Search anything..."
             className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200/70 rounded-xl text-xs sm:text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition-all"
           />
         </div>
+        {searchQuery.trim() && (
+          <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 max-h-80 overflow-y-auto">
+            {searchResults.length ? searchResults.map((result, index) => (
+              <button
+                key={`${result.page}-${result.label}-${index}`}
+                onClick={() => { setCurrentPage(result.page); setSearchQuery(''); }}
+                className="w-full px-3 py-2 text-left hover:bg-purple-50 flex items-center justify-between gap-3"
+              >
+                <span className="text-xs font-semibold text-slate-800 truncate">{result.label}</span>
+                <span className="text-[10px] text-slate-400 shrink-0">{result.detail}</span>
+              </button>
+            )) : <p className="px-3 py-2 text-xs text-slate-400">No matching study items</p>}
+          </div>
+        )}
       </div>
 
       {/* Right Controls */}
       <div className="flex items-center gap-3">
-        {/* AI Assistant Quick Pill */}
+        {/* Study helper shortcut */}
         <button
           onClick={() => setCurrentPage('ai-assistant')}
           className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-xs font-semibold shadow-sm hover:opacity-95 transition-all"
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Ask AI</span>
+          <span>Study Helper</span>
         </button>
 
         {/* Notifications */}

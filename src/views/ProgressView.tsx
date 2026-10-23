@@ -1,19 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useApp } from '../context/AppContext';
 import {
   TrendingUp,
-  Award,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
   Lightbulb,
-  ChevronDown,
-  Sparkles
 } from 'lucide-react';
 
 export const ProgressView: React.FC = () => {
-  const { subjects, overallProgress, todayTasks, assignments } = useApp();
-  const [timeRange, setTimeRange] = useState('This Month');
+  const { subjects, overallProgress, todayTasks, assignments, studyPlan } = useApp();
 
   // SVG circular gauge calculations
   const radius = 70;
@@ -22,8 +15,11 @@ export const ProgressView: React.FC = () => {
   const circumference = normalizedRadius * 2 * Math.PI;
   const strokeDashoffset = circumference - (overallProgress / 100) * circumference;
 
-  const completedCount = 12 + todayTasks.filter((t) => t.completed).length;
-  const inProgressCount = 6;
+  const planTasks = studyPlan.flatMap(day => day.tasks);
+  const completedCount = todayTasks.filter(t => t.completed).length
+    + assignments.filter(a => a.completed).length
+    + planTasks.filter(task => task.completed).length;
+  const inProgressCount = planTasks.filter(task => !task.completed).length;
   const pendingCount = todayTasks.filter((t) => !t.completed).length + assignments.filter((a) => !a.completed).length;
 
   return (
@@ -40,18 +36,7 @@ export const ProgressView: React.FC = () => {
           </p>
         </div>
 
-        <div className="relative">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-          >
-            <option value="This Week">This Week</option>
-            <option value="This Month">This Month</option>
-            <option value="Semester 1">Semester 1</option>
-            <option value="All Time">All Time</option>
-          </select>
-        </div>
+        <span className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 shadow-sm">Live totals</span>
       </div>
 
       {/* Main Radial Progress Card */}
@@ -105,7 +90,7 @@ export const ProgressView: React.FC = () => {
 
           <div className="bg-purple-50/60 rounded-2xl p-3 border border-purple-100">
             <p className="text-xl sm:text-2xl font-black text-purple-700">{inProgressCount}</p>
-            <p className="text-[11px] font-semibold text-purple-600 mt-0.5">In Progress</p>
+            <p className="text-[11px] font-semibold text-purple-600 mt-0.5">Open Plan Tasks</p>
           </div>
 
           <div className="bg-amber-50/60 rounded-2xl p-3 border border-amber-100">

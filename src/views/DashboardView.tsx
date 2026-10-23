@@ -10,7 +10,8 @@ import {
   Clock,
   Check,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
@@ -18,6 +19,7 @@ export const DashboardView: React.FC = () => {
     todayTasks,
     toggleTodayTask,
     addTodayTask,
+    deleteTodayTask,
     streakDays,
     completedStreakDays,
     subjects,
@@ -202,15 +204,25 @@ export const DashboardView: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium bg-slate-100/70 px-2.5 py-1 rounded-lg">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{task.duration}</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium bg-slate-100/70 px-2.5 py-1 rounded-lg">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{task.duration}</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${task.title}`}
+                    onClick={(event) => { event.stopPropagation(); deleteTodayTask(task.id); }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* AI tip footer inside card */}
+          {/* Study plan shortcut */}
           <div className="mt-5 p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100/80 flex items-center justify-between">
             <div className="flex items-center gap-2.5 text-xs text-purple-900">
               <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
@@ -220,7 +232,7 @@ export const DashboardView: React.FC = () => {
               onClick={() => setCurrentPage('study-plan')}
               className="text-xs font-bold text-purple-700 hover:text-purple-800 flex items-center gap-0.5"
             >
-              <span>Generate AI Plan</span>
+              <span>Build a study plan</span>
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>

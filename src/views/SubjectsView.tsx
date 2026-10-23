@@ -161,7 +161,7 @@ export const SubjectsView: React.FC = () => {
                       className="flex items-center gap-1 text-[11px] font-bold text-purple-600 hover:underline"
                     >
                       <Sparkles className="w-3 h-3" />
-                      <span>Study with AI</span>
+                      <span>Open study helper</span>
                     </button>
                   </div>
                 </div>

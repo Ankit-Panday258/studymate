@@ -8,19 +8,23 @@ import {
   Check,
   MoreVertical,
   Lightbulb,
-  CheckCircle2,
   RefreshCw,
-  Plus
+  Trash2,
 } from 'lucide-react';
 
 export const StudyPlanView: React.FC = () => {
-  const { studyPlan, togglePlanTask, generateNewPlan, isAiTyping } = useApp();
+  const { studyPlan, togglePlanTask, addPlanTask, deletePlanTask, reschedulePlanDay, generateNewPlan, isAiTyping } = useApp();
 
   const [goal, setGoal] = useState('Exam Preparation');
   const [timeAvailable, setTimeAvailable] = useState('3-4 hours/day');
-  const [examDate, setExamDate] = useState('2026-11-10');
+  const [examDate, setExamDate] = useState(() => {
+    const date = new Date(); date.setDate(date.getDate() + 14);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
   const [activeTab, setActiveTab] = useState<'7day' | 'weekly' | 'custom'>('7day');
   const [activeMenuDayId, setActiveMenuDayId] = useState<string | null>(null);
+  const [customTaskDayId, setCustomTaskDayId] = useState<string | null>(null);
+  const [customTaskText, setCustomTaskText] = useState('');
 
   const handleGenerate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,11 +36,11 @@ export const StudyPlanView: React.FC = () => {
       {/* Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-          <span>AI Study Plan</span>
+          <span>Study Plan</span>
           <Sparkles className="w-6 h-6 text-purple-600 fill-purple-600 animate-pulse" />
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Get a personalized study plan based on your subjects, exams and available time.
+          Build a practical revision week from your subjects, goal, and available time.
         </p>
       </div>
 
@@ -98,7 +102,7 @@ export const StudyPlanView: React.FC = () => {
               {isAiTyping ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Synthesizing Optimal Schedule...</span>
+                  <span>Building Your Study Week...</span>
                 </>
               ) : (
                 <>
@@ -131,7 +135,7 @@ export const StudyPlanView: React.FC = () => {
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
-          Weekly View
+          Next 3 Days
         </button>
         <button
           onClick={() => setActiveTab('custom')}
@@ -141,13 +145,15 @@ export const StudyPlanView: React.FC = () => {
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
-          Custom Plan
+          Open Tasks
         </button>
       </div>
 
       {/* Daily Breakdown List */}
       <div className="space-y-4">
-        {studyPlan.map((day) => (
+        {(activeTab === 'weekly' ? studyPlan.slice(0, 3) : studyPlan)
+          .filter(day => activeTab !== 'custom' || day.tasks.some(task => !task.completed))
+          .map((day) => (
           <div
             key={day.id}
             className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm transition-all hover:shadow-md relative"
@@ -172,13 +178,13 @@ export const StudyPlanView: React.FC = () => {
                 {activeMenuDayId === day.id && (
                   <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-10 text-xs">
                     <button
-                      onClick={() => setActiveMenuDayId(null)}
+                      onClick={() => { reschedulePlanDay(day.id); setActiveMenuDayId(null); }}
                       className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-purple-50 hover:text-purple-700"
                     >
-                      Reschedule
+                      Move to end
                     </button>
                     <button
-                      onClick={() => setActiveMenuDayId(null)}
+                      onClick={() => { setCustomTaskDayId(day.id); setCustomTaskText(''); setActiveMenuDayId(null); }}
                       className="w-full px-3 py-1.5 text-left text-slate-600 hover:bg-purple-50 hover:text-purple-700"
                     >
                       Add Custom Task
@@ -190,7 +196,7 @@ export const StudyPlanView: React.FC = () => {
 
             {/* Task list for day */}
             <div className="mt-3.5 space-y-2.5">
-              {day.tasks.map((task) => (
+              {day.tasks.filter(task => activeTab !== 'custom' || !task.completed).map((task) => (
                 <div
                   key={task.id}
                   onClick={() => togglePlanTask(day.id, task.id)}
@@ -209,20 +215,57 @@ export const StudyPlanView: React.FC = () => {
                   >
                     {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
                   </div>
-                  <span className="text-xs sm:text-sm font-medium">{task.text}</span>
+                  <span className="flex-1 text-xs sm:text-sm font-medium">{task.text}</span>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${task.text}`}
+                    onClick={(event) => { event.stopPropagation(); deletePlanTask(day.id, task.id); }}
+                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         ))}
+        {studyPlan.length === 0 && <div className="bg-white rounded-2xl p-8 border border-slate-100 text-center text-sm text-slate-500">Choose your goal and available time, then generate a plan to get started.</div>}
       </div>
+
+      {customTaskDayId && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              addPlanTask(customTaskDayId, customTaskText);
+              setCustomTaskDayId(null);
+            }}
+            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4"
+          >
+            <h2 className="text-lg font-bold text-slate-900">Add a custom task</h2>
+            <label className="block text-sm font-medium text-slate-600" htmlFor="custom-plan-task">Task</label>
+            <input
+              id="custom-plan-task"
+              autoFocus
+              required
+              value={customTaskText}
+              onChange={(event) => setCustomTaskText(event.target.value)}
+              placeholder="e.g. Review chapter notes"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setCustomTaskDayId(null)} className="px-4 py-2 font-bold text-slate-500">Cancel</button>
+              <button type="submit" className="px-5 py-2 rounded-xl bg-purple-600 text-white font-bold">Add Task</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Footer Informational Tip */}
       <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/70 flex items-center gap-3 text-amber-900 text-xs sm:text-sm">
         <Lightbulb className="w-5 h-5 text-amber-600 shrink-0" />
         <p>
-          <span className="font-bold">Pro-tip:</span> Plan adjusts automatically based on your
-          progress and upcoming exams.
+          <span className="font-bold">Planning tip:</span> This plan is generated in your browser from your subjects and settings. Adjust it as your workload changes.
         </p>
       </div>
     </div>

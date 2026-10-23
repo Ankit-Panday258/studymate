@@ -1,0 +1,17 @@
+declare module '*.css';
+
+interface ImportMetaEnv {
+  readonly VITE_APPWRITE_ENDPOINT: string;
+  readonly VITE_APPWRITE_PROJECT_ID: string;
+  readonly VITE_APPWRITE_DATABASE_ID: string;
+  readonly VITE_APPWRITE_SUBJECTS_TABLE_ID: string;
+  readonly VITE_APPWRITE_TODAY_TASKS_TABLE_ID: string;
+  readonly VITE_APPWRITE_ASSIGNMENTS_TABLE_ID: string;
+  readonly VITE_APPWRITE_EXAMS_TABLE_ID: string;
+  readonly VITE_APPWRITE_CALENDAR_EVENTS_TABLE_ID: string;
+  readonly VITE_APPWRITE_STUDY_PLAN_TABLE_ID: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

@@ -47,16 +47,16 @@ export const AIAssistantView: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 flex items-center gap-1.5">
-              <span>AI Assistant</span>
+              <span>Study Helper</span>
               <Sparkles className="w-4 h-4 text-purple-600 fill-purple-600" />
             </h1>
-            <p className="text-xs text-slate-400">Your 24/7 personal study tutor & motivator</p>
+            <p className="text-xs text-slate-400">On-device study prompts and note helpers</p>
           </div>
         </div>
 
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-xs font-semibold">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Online</span>
+          <span>Works locally</span>
         </span>
       </div>
 
@@ -140,7 +140,7 @@ export const AIAssistantView: React.FC = () => {
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Ask me anything..."
+            placeholder="Ask for a plan, explain a topic, or paste notes to summarize..."
             className="w-full pl-5 pr-14 py-3.5 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm transition-all"
           />
           <button

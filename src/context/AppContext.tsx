@@ -1,7 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Page, Subject, TodayTask, Assignment, Exam, CalendarEvent, StudyPlanDay, ChatMessage } from '../types';
+import { appwriteConfigured, appwriteMissing, connectAndLoad, saveCollection } from '../services/appwrite';
 
 interface AppContextType {
+  syncStatus: 'local' | 'connecting' | 'connected' | 'error';
+  syncError: string | null;
+  retrySync: () => void;
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
   searchQuery: string;
@@ -11,6 +15,7 @@ interface AppContextType {
   todayTasks: TodayTask[];
   toggleTodayTask: (id: string) => void;
   addTodayTask: (title: string, duration: string) => void;
+  deleteTodayTask: (id: string) => void;
   
   // Streak
   streakDays: number;
@@ -25,19 +30,25 @@ interface AppContextType {
   assignments: Assignment[];
   toggleAssignment: (id: string) => void;
   addAssignment: (title: string, dueDate: string, priority: 'High' | 'Medium' | 'Low') => void;
+  deleteAssignment: (id: string) => void;
   
   // Exams
   exams: Exam[];
   addExam: (title: string, date: string, daysLeft: number) => void;
+  deleteExam: (id: string) => void;
   
   // AI Study Plan
   studyPlan: StudyPlanDay[];
   togglePlanTask: (dayId: string, taskId: string) => void;
+  addPlanTask: (dayId: string, text: string) => void;
+  deletePlanTask: (dayId: string, taskId: string) => void;
+  reschedulePlanDay: (dayId: string) => void;
   generateNewPlan: (goal: string, time: string, examDate: string) => void;
   
   // Calendar
   calendarEvents: CalendarEvent[];
   addCalendarEvent: (event: Omit<CalendarEvent, 'id'>) => void;
+  deleteCalendarEvent: (id: string) => void;
   
   // AI Assistant Chat
   chatMessages: ChatMessage[];
@@ -143,7 +154,7 @@ const initialChatMessages: ChatMessage[] = [
   {
     id: 'm1',
     role: 'assistant',
-    content: "Hi! I'm your StudyMate AI 👋\nI can help you with study plans, summaries, explanations, and more. What do you want to know?",
+    content: "Hi! I'm your StudyMate study helper 👋\nI can help you build study routines, explain a learning method, and extract key sentences from notes you paste here. This runs locally with simple rules, not an AI service. What would you like to work on?",
     timestamp: 'Just now',
     prompts: [
       'Create a study plan for my exams',
@@ -155,25 +166,107 @@ const initialChatMessages: ChatMessage[] = [
   },
 ];
 
+const STORAGE_KEY = 'studymate:v1';
+type SavedState = {
+  currentPage: Page; todayTasks: TodayTask[]; streakDays: number; subjects: Subject[];
+  assignments: Assignment[]; exams: Exam[]; studyPlan: StudyPlanDay[];
+  calendarEvents: CalendarEvent[]; chatMessages: ChatMessage[];
+};
+
+function readSavedState(): Partial<SavedState> {
+  try {
+    const value = localStorage.getItem(STORAGE_KEY);
+    return value ? JSON.parse(value) as Partial<SavedState> : {};
+  } catch {
+    return {};
+  }
+}
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+  const [savedState] = useState(readSavedState);
+  const [currentPage, setCurrentPage] = useState<Page>(savedState.currentPage ?? 'dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [todayTasks, setTodayTasks] = useState<TodayTask[]>(initialTodayTasks);
-  const [streakDays, setStreakDays] = useState(7);
+  const [todayTasks, setTodayTasks] = useState<TodayTask[]>(savedState.todayTasks ?? initialTodayTasks);
+  const [streakDays] = useState(savedState.streakDays ?? 7);
   const [completedStreakDays] = useState<boolean[]>([true, true, true, true, true, true, false]);
   
-  const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
-  const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
-  const [exams, setExams] = useState<Exam[]>(initialExams);
+  const [subjects, setSubjects] = useState<Subject[]>(savedState.subjects ?? initialSubjects);
+  const [assignments, setAssignments] = useState<Assignment[]>(savedState.assignments ?? initialAssignments);
+  const [exams, setExams] = useState<Exam[]>(savedState.exams ?? initialExams);
   
-  const [studyPlan, setStudyPlan] = useState<StudyPlanDay[]>(initialPlan);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(initialCalendarEvents);
+  const [studyPlan, setStudyPlan] = useState<StudyPlanDay[]>(savedState.studyPlan ?? initialPlan);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(savedState.calendarEvents ?? initialCalendarEvents);
   
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialChatMessages);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(savedState.chatMessages ?? initialChatMessages);
   const [isAiTyping, setIsAiTyping] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'local' | 'connecting' | 'connected' | 'error'>(appwriteConfigured ? 'connecting' : 'local');
+  const [syncError, setSyncError] = useState<string | null>(appwriteConfigured ? null : `Local only. Missing Appwrite settings: ${appwriteMissing.join(', ')}`);
+  const [syncRevision, setSyncRevision] = useState(0);
+  const [syncOwner, setSyncOwner] = useState<string | null>(null);
+  const syncQueue = useRef<Promise<void>>(Promise.resolve());
+  const lastConnectedOwner = useRef<string | null>(null);
+
+  const retrySync = () => setSyncRevision(value => value + 1);
+
+  useEffect(() => {
+    if (!appwriteConfigured) return;
+    let cancelled = false;
+    setSyncStatus('connecting'); setSyncError(null);
+    connectAndLoad().then(async ({ data, ownerId }) => {
+      if (cancelled) return;
+      if (lastConnectedOwner.current === ownerId) {
+        // A retry in the same authenticated session must flush local changes made while offline.
+        await Promise.all([
+          saveCollection('subjects', subjects, ownerId), saveCollection('todayTasks', todayTasks, ownerId),
+          saveCollection('assignments', assignments, ownerId), saveCollection('exams', exams, ownerId),
+          saveCollection('calendarEvents', calendarEvents, ownerId), saveCollection('studyPlan', studyPlan, ownerId),
+        ]);
+      } else {
+        if (data.subjects.length) setSubjects(data.subjects); else await saveCollection('subjects', subjects, ownerId);
+        if (data.todayTasks.length) setTodayTasks(data.todayTasks); else await saveCollection('todayTasks', todayTasks, ownerId);
+        if (data.assignments.length) setAssignments(data.assignments); else await saveCollection('assignments', assignments, ownerId);
+        if (data.exams.length) setExams(data.exams); else await saveCollection('exams', exams, ownerId);
+        if (data.calendarEvents.length) setCalendarEvents(data.calendarEvents); else await saveCollection('calendarEvents', calendarEvents, ownerId);
+        if (data.studyPlan.length) setStudyPlan(data.studyPlan); else await saveCollection('studyPlan', studyPlan, ownerId);
+      }
+      if (!cancelled) { lastConnectedOwner.current = ownerId; setSyncOwner(ownerId); setSyncStatus('connected'); }
+    }).catch(error => {
+      if (!cancelled) { setSyncStatus('error'); setSyncError(error instanceof Error ? error.message : 'Could not connect to Appwrite.'); }
+    });
+    return () => { cancelled = true; };
+  // syncRevision intentionally retries the connection while the first render snapshots local state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncRevision]);
+
+  useEffect(() => {
+    if (syncStatus !== 'connected' || !syncOwner) return;
+    let cancelled = false;
+    const snapshot = { subjects, todayTasks, assignments, exams, calendarEvents, studyPlan };
+    syncQueue.current = syncQueue.current.catch(() => undefined).then(async () => {
+      try {
+        await Promise.all([
+          saveCollection('subjects', snapshot.subjects, syncOwner), saveCollection('todayTasks', snapshot.todayTasks, syncOwner),
+          saveCollection('assignments', snapshot.assignments, syncOwner), saveCollection('exams', snapshot.exams, syncOwner),
+          saveCollection('calendarEvents', snapshot.calendarEvents, syncOwner), saveCollection('studyPlan', snapshot.studyPlan, syncOwner),
+        ]);
+      } catch (error) {
+        if (!cancelled) { setSyncStatus('error'); setSyncError(error instanceof Error ? error.message : 'Could not save planner data.'); }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [syncStatus, syncOwner, subjects, todayTasks, assignments, exams, calendarEvents, studyPlan]);
+
+  useEffect(() => {
+    try {
+      const state: SavedState = { currentPage, todayTasks, streakDays, subjects, assignments, exams, studyPlan, calendarEvents, chatMessages };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Storage can be unavailable or full; the planner remains usable for this session.
+    }
+  }, [currentPage, todayTasks, streakDays, subjects, assignments, exams, studyPlan, calendarEvents, chatMessages]);
 
   // Calculate overall progress from subjects + tasks
   const totalTopics = subjects.reduce((acc, s) => acc + s.totalTopics, 0);
@@ -195,6 +288,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setTodayTasks(prev => [newTask, ...prev]);
   };
+
+  const deleteTodayTask = (id: string) => setTodayTasks(prev => prev.filter(task => task.id !== id));
 
   const addSubject = (name: string, totalTopics: number, icon: Subject['icon']) => {
     const colors = [
@@ -247,6 +342,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAssignments(prev => [newAssignment, ...prev]);
   };
 
+  const deleteAssignment = (id: string) => setAssignments(prev => prev.filter(assignment => assignment.id !== id));
+
   const addExam = (title: string, date: string, daysLeft: number) => {
     const newExam: Exam = {
       id: `exam-${Date.now()}`,
@@ -256,6 +353,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setExams(prev => [...prev, newExam]);
   };
+
+  const deleteExam = (id: string) => setExams(prev => prev.filter(exam => exam.id !== id));
 
   const togglePlanTask = (dayId: string, taskId: string) => {
     setStudyPlan(prev =>
@@ -273,54 +372,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const addPlanTask = (dayId: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setStudyPlan(prev => prev.map(day => day.id === dayId
+      ? { ...day, tasks: [...day.tasks, { id: `custom-${Date.now()}`, text: trimmed, completed: false }] }
+      : day));
+  };
+
+  const deletePlanTask = (dayId: string, taskId: string) => {
+    setStudyPlan(prev => prev.map(day => day.id === dayId
+      ? { ...day, tasks: day.tasks.filter(task => task.id !== taskId) }
+      : day));
+  };
+
+  const reschedulePlanDay = (dayId: string) => {
+    setStudyPlan(prev => {
+      const index = prev.findIndex(day => day.id === dayId);
+      if (index < 0 || index === prev.length - 1) return prev;
+      return [...prev.filter(day => day.id !== dayId), prev[index]];
+    });
+  };
+
   const generateNewPlan = (goal: string, time: string, examDate: string) => {
     setIsAiTyping(true);
     setTimeout(() => {
-      const generatedPlan: StudyPlanDay[] = [
-        {
-          id: `plan-1-${Date.now()}`,
-          dayLabel: 'Day 1 (Foundation)',
-          dateLabel: `${time} focus`,
-          accentColor: 'border-l-purple-500 bg-purple-50/40',
+      const hoursPerDay = time.startsWith('1') ? '1–2 hours' : time.startsWith('5') ? '5–6 hours' : '3–4 hours';
+      const orderedSubjects = [...subjects].sort((a, b) => (a.completedTopics / a.totalTopics) - (b.completedTopics / b.totalTopics));
+      const start = new Date(); start.setHours(12, 0, 0, 0);
+      const end = examDate ? new Date(`${examDate}T12:00:00`) : new Date(start);
+      const daysUntilExam = Number.isNaN(end.getTime()) ? 7 : Math.max(1, Math.min(14, Math.ceil((end.getTime() - start.getTime()) / 86400000)));
+      const focusSteps = ['Review key concepts and make a short recall sheet', 'Work through practice problems, then check mistakes', 'Use active recall: close your notes and explain the topic', 'Complete a timed quiz and record topics to revisit'];
+      const accents = ['border-l-purple-500 bg-purple-50/40', 'border-l-blue-500 bg-blue-50/40', 'border-l-emerald-500 bg-emerald-50/40', 'border-l-amber-500 bg-amber-50/40'];
+      const generatedPlan: StudyPlanDay[] = Array.from({ length: Math.min(7, daysUntilExam) }, (_, index) => {
+        const date = new Date(start); date.setDate(start.getDate() + index);
+        const subject = orderedSubjects[index % Math.max(1, orderedSubjects.length)];
+        const secondSubject = orderedSubjects[(index + 1) % Math.max(1, orderedSubjects.length)];
+        const label = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        const subjectName = subject?.name ?? 'Your next subject';
+        return {
+          id: `plan-${Date.now()}-${index}`, dayLabel: label, dateLabel: `${hoursPerDay} · ${goal}`,
+          accentColor: accents[index % accents.length],
           tasks: [
-            { id: 'g1', text: `Core Concept Review for ${goal} (1.5 hrs)`, completed: false },
-            { id: 'g2', text: 'Formula sheet and key definition flashcards (1 hr)', completed: false },
+            { id: `plan-${index}-a`, text: `${subjectName}: ${focusSteps[index % focusSteps.length]} (45 min)`, completed: false },
+            { id: `plan-${index}-b`, text: `${secondSubject?.name ?? subjectName}: ${index % 2 ? 'practice questions and review errors' : 'spaced revision and self-test'} (30 min)`, completed: false },
           ],
-        },
-        {
-          id: `plan-2-${Date.now()}`,
-          dayLabel: 'Day 2 (Problem Solving)',
-          dateLabel: `${time} focus`,
-          accentColor: 'border-l-blue-500 bg-blue-50/40',
-          tasks: [
-            { id: 'g3', text: 'High-weightage chapter numericals & derivations (2 hrs)', completed: false },
-            { id: 'g4', text: 'Error log review and self-test (1 hr)', completed: false },
-          ],
-        },
-        {
-          id: `plan-3-${Date.now()}`,
-          dayLabel: 'Day 3 (Timed Mock Drill)',
-          dateLabel: `${time} focus`,
-          accentColor: 'border-l-emerald-500 bg-emerald-50/40',
-          tasks: [
-            { id: 'g5', text: `Full length past paper practice for exam (${examDate}) (2 hrs)`, completed: false },
-            { id: 'g6', text: 'AI answer evaluation & doubt clarification (1 hr)', completed: false },
-          ],
-        },
-        {
-          id: `plan-4-${Date.now()}`,
-          dayLabel: 'Day 4 (Final Polish)',
-          dateLabel: `${time} focus`,
-          accentColor: 'border-l-amber-500 bg-amber-50/40',
-          tasks: [
-            { id: 'g7', text: 'High-speed revision of marked difficult questions (1.5 hrs)', completed: false },
-            { id: 'g8', text: 'Mind mapping & memory recall drill (45 min)', completed: false },
-          ],
-        },
-      ];
+        };
+      });
       setStudyPlan(generatedPlan);
       setIsAiTyping(false);
-    }, 900);
+    }, 250);
   };
 
   const addCalendarEvent = (event: Omit<CalendarEvent, 'id'>) => {
@@ -330,6 +431,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setCalendarEvents(prev => [...prev, newEvent]);
   };
+
+  const deleteCalendarEvent = (id: string) => setCalendarEvents(prev => prev.filter(event => event.id !== id));
 
   const sendMessage = (text: string) => {
     if (!text.trim()) return;
@@ -345,18 +448,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAiTyping(true);
 
     setTimeout(() => {
-      let reply = "I'm here to help you ace your studies! What specific topic would you like to review?";
+      let reply = `Here's a practical next step: pick one small task for ${subjects[0]?.name ?? 'your current subject'}, work for 25 minutes, then take a 5-minute break. Add your topic or paste notes and I can help turn them into a study prompt. This helper works locally and doesn't connect to an AI service.`;
       const lower = text.toLowerCase();
 
-      if (lower.includes('plan') || lower.includes('exam')) {
-        reply = "Here is a quick exam prep strategy: 1) Allocate 40% of your time to high-yield topics in Mathematics & Physics. 2) Use active recall with 25-minute Pomodoro sprints. 3) Take a 1-hour mock exam every 3 days. I've updated your AI Study Plan tab with fresh suggestions!";
-      } else if (lower.includes('summarize') || lower.includes('summary')) {
-        reply = "Give me any textbook excerpt, chapter name, or topic notes, and I'll generate a crisp bullet-point summary, key formulas, and high-frequency exam questions!";
-      } else if (lower.includes('explain') || lower.includes('concept')) {
-        reply = "Sure! Let's break it down using the Feynman Technique: I'll give you a simple analogy, explain the step-by-step logic, and then test your understanding with a short scenario question. Which concept are we looking at?";
-      } else if (lower.includes('practice') || lower.includes('question')) {
-        reply = "Here are 3 quick practice questions to test your grasp:\n1. Physics: Calculate the work done when a 50N force moves an object 4m at a 60° angle.\n2. Biology: Explain the primary difference between mitosis and meiosis in terms of chromosome number.\n3. Mathematics: Find the roots of the quadratic equation 2x² - 7x + 3 = 0.";
-      } else if (lower.includes('consistent') || lower.includes('habit') || lower.includes('streak')) {
+      if (/\b(?:plan|planning|schedule|exam|exams)\b/.test(lower)) {
+        const nextExam = [...exams].sort((a, b) => Date.parse(a.date) - Date.parse(b.date))[0];
+        const daysLeft = nextExam ? Math.max(0, Math.ceil((Date.parse(nextExam.date) - Date.now()) / 86400000)) : 0;
+        reply = nextExam ? `Your next listed exam is ${nextExam.title} (${daysLeft} days left). Study ${Math.max(1, Math.min(3, Math.ceil(daysLeft / 3)))} priority topics first: use a short recall session, practice questions, then review errors. Open Study Plan to build a subject-based week.` : 'Add an exam and its date in Assignments & Exams, then use Study Plan to create a focused revision week.';
+      } else if (/\b(?:summarize|summarise|summary)\b/.test(lower)) {
+        const passage = text.replace(/summari[sz]e|summary|this topic|these notes/ig, '').replace(/[:\n]/g, ' ').trim();
+        const sentences = passage.match(/[^.!?]+[.!?]?/g)?.map(s => s.trim()).filter(Boolean) ?? [];
+        reply = sentences.length > 1 ? `Key points from your text:\n• ${sentences.slice(0, 4).join('\n• ')}\n\nThis is a simple on-device extraction; check it against your source notes.` : 'Paste a paragraph or your notes after “summarize” and I’ll extract the main sentences locally.';
+      } else if (/\b(?:explain|concept)\b/.test(lower)) {
+        const topic = text.replace(/explain|concept|please/ig, '').trim() || 'your topic';
+        reply = `Try the Feynman method for ${topic}: write what you think it means in plain language, identify the first step you can't explain, review only that part, then explain it again without notes. What example from your class could you use to test your explanation?`;
+      } else if (/\b(?:practice|question|questions|quiz)\b/.test(lower)) {
+        const topic = text.replace(/generate|practice|questions?|for/ig, '').trim() || subjects[0]?.name || 'your topic';
+        reply = `Practice prompts for ${topic}:\n1. Define the central idea without looking at your notes.\n2. Solve one representative problem and show every step.\n3. Give a real-world example, then explain one common mistake.\n\nThese are generic prompts; add a chapter name or paste a topic to focus them.`;
+      } else if (/\b(?:consistent|consistency|habit|streak)\b/.test(lower)) {
         reply = "You're already on a 7-day study streak! 🔥 To maintain momentum:\n• Never miss two days in a row.\n• Start each study session with the easiest 5-minute task.\n• Set a consistent time block on your calendar every day.";
       }
 
@@ -375,6 +484,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        syncStatus, syncError, retrySync,
         currentPage,
         setCurrentPage,
         searchQuery,
@@ -382,6 +492,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         todayTasks,
         toggleTodayTask,
         addTodayTask,
+        deleteTodayTask,
         streakDays,
         completedStreakDays,
         subjects,
@@ -390,13 +501,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         assignments,
         toggleAssignment,
         addAssignment,
+        deleteAssignment,
         exams,
         addExam,
+        deleteExam,
         studyPlan,
         togglePlanTask,
+        addPlanTask,
+        deletePlanTask,
+        reschedulePlanDay,
         generateNewPlan,
         calendarEvents,
         addCalendarEvent,
+        deleteCalendarEvent,
         chatMessages,
         sendMessage,
         isAiTyping,
