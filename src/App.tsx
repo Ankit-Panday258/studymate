@@ -19,14 +19,14 @@ const MainContent: React.FC = () => {
     return <div className="min-h-screen bg-[#0f111a] flex items-center justify-center text-sm font-medium text-slate-300">Checking your account…</div>;
   }
 
+  if (!authUser) {
+    return <AuthView />;
+  }
   if (currentPage === 'landing') {
     return <LandingPage />;
   }
   if (currentPage === 'auth') {
-    return <AuthView />;
-  }
-  if (!authUser) {
-    return <AuthView />;
+    return <DashboardView />;
   }
 
   const renderActiveView = () => {

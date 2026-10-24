@@ -206,17 +206,17 @@ function createBasicStudyReply(text: string, subjects: Subject[], exams: Exam[])
   return reply;
 }
 
-const STORAGE_KEY = 'studymate:v1';
+const STORAGE_KEY_PREFIX = 'studymate:v2:user:';
 const STUDY_AI_OPT_IN_KEY = 'studymate:study-ai-opt-in';
 type SavedState = {
-  currentPage: Page; todayTasks: TodayTask[]; streakDays: number; subjects: Subject[];
+  todayTasks: TodayTask[]; subjects: Subject[];
   assignments: Assignment[]; exams: Exam[]; studyPlan: StudyPlanDay[];
   calendarEvents: CalendarEvent[]; chatMessages: ChatMessage[];
 };
 
-function readSavedState(): Partial<SavedState> {
+function readSavedState(userId: string): Partial<SavedState> {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
+    const value = localStorage.getItem(`${STORAGE_KEY_PREFIX}${userId}`);
     return value ? JSON.parse(value) as Partial<SavedState> : {};
   } catch {
     return {};
@@ -226,30 +226,29 @@ function readSavedState(): Partial<SavedState> {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [savedState] = useState(readSavedState);
-  const [currentPage, setCurrentPage] = useState<Page>(savedState.currentPage ?? 'dashboard');
+  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [todayTasks, setTodayTasks] = useState<TodayTask[]>(savedState.todayTasks ?? initialTodayTasks);
-  const [streakDays] = useState(savedState.streakDays ?? 7);
+  const [todayTasks, setTodayTasks] = useState<TodayTask[]>(initialTodayTasks);
+  const [streakDays] = useState(7);
   const [completedStreakDays] = useState<boolean[]>([true, true, true, true, true, true, false]);
   
-  const [subjects, setSubjects] = useState<Subject[]>(savedState.subjects ?? initialSubjects);
-  const [assignments, setAssignments] = useState<Assignment[]>(savedState.assignments ?? initialAssignments);
-  const [exams, setExams] = useState<Exam[]>(savedState.exams ?? initialExams);
+  const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
+  const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
+  const [exams, setExams] = useState<Exam[]>(initialExams);
   
-  const [studyPlan, setStudyPlan] = useState<StudyPlanDay[]>(savedState.studyPlan ?? initialPlan);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(savedState.calendarEvents ?? initialCalendarEvents);
+  const [studyPlan, setStudyPlan] = useState<StudyPlanDay[]>(initialPlan);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(initialCalendarEvents);
   
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(savedState.chatMessages ?? initialChatMessages);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [studyAiStatus, setStudyAiStatus] = useState<StudyAiStatus>('idle');
   const [studyAiProgress, setStudyAiProgress] = useState('');
   const [studyAiError, setStudyAiError] = useState<string | null>(null);
   const studyAiInitializationStarted = useRef(false);
-  const [syncStatus, setSyncStatus] = useState<'local' | 'connecting' | 'connected' | 'error'>(appwriteConfigured ? 'connecting' : 'local');
+  const [syncStatus, setSyncStatus] = useState<'local' | 'connecting' | 'connected' | 'error'>('local');
   const [syncError, setSyncError] = useState<string | null>(appwriteConfigured ? null : `Local only. Missing Appwrite settings: ${appwriteMissing.join(', ')}`);
   const [syncRevision, setSyncRevision] = useState(0);
   const [syncOwner, setSyncOwner] = useState<string | null>(null);
@@ -258,10 +257,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const retrySync = () => setSyncRevision(value => value + 1);
 
+  const restoreUserState = (userId: string) => {
+    const saved = readSavedState(userId);
+    setTodayTasks(saved.todayTasks ?? initialTodayTasks);
+    setSubjects(saved.subjects ?? initialSubjects);
+    setAssignments(saved.assignments ?? initialAssignments);
+    setExams(saved.exams ?? initialExams);
+    setStudyPlan(saved.studyPlan ?? initialPlan);
+    setCalendarEvents(saved.calendarEvents ?? initialCalendarEvents);
+    setChatMessages(saved.chatMessages ?? initialChatMessages);
+    setCurrentPage('dashboard');
+  };
+
   useEffect(() => {
     let cancelled = false;
     getCurrentUser()
-      .then(user => { if (!cancelled) setAuthUser(user); })
+      .then(user => {
+        if (cancelled) return;
+        if (user) restoreUserState(user.id);
+        setAuthUser(user);
+      })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setAuthLoading(false); });
     return () => { cancelled = true; };
@@ -269,6 +284,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const login = async (email: string, password: string) => {
     const user = await loginAccount(email, password);
+    restoreUserState(user.id);
+    lastConnectedOwner.current = null;
+    setSyncOwner(null);
+    setSyncStatus('local');
     setAuthUser(user);
     setCurrentPage('dashboard');
     retrySync();
@@ -276,6 +295,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const register = async (name: string, email: string, password: string) => {
     const user = await registerAccount(name, email, password);
+    restoreUserState(user.id);
+    lastConnectedOwner.current = null;
+    setSyncOwner(null);
+    setSyncStatus('local');
     setAuthUser(user);
     setCurrentPage('dashboard');
     retrySync();
@@ -284,16 +307,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = async () => {
     await logoutAccount();
     setAuthUser(null);
-    setCurrentPage('landing');
-    retrySync();
+    setSyncOwner(null);
+    setSyncStatus('local');
+    lastConnectedOwner.current = null;
+    setCurrentPage('auth');
   };
 
   useEffect(() => {
-    if (!appwriteConfigured) return;
+    if (!appwriteConfigured || !authUser) return;
     let cancelled = false;
     setSyncStatus('connecting'); setSyncError(null);
     connectAndLoad().then(async ({ data, ownerId }) => {
       if (cancelled) return;
+      if (ownerId !== authUser.id) {
+        throw new Error('Your account changed while syncing. Sign in again and retry.');
+      }
       if (lastConnectedOwner.current === ownerId) {
         // A retry in the same authenticated session must flush local changes made while offline.
         await Promise.all([
@@ -316,7 +344,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => { cancelled = true; };
   // syncRevision intentionally retries the connection while the first render snapshots local state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncRevision]);
+  }, [syncRevision, authUser?.id]);
 
   useEffect(() => {
     if (syncStatus !== 'connected' || !syncOwner) return;
@@ -337,13 +365,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [syncStatus, syncOwner, subjects, todayTasks, assignments, exams, calendarEvents, studyPlan]);
 
   useEffect(() => {
+    if (!authUser) return;
     try {
-      const state: SavedState = { currentPage, todayTasks, streakDays, subjects, assignments, exams, studyPlan, calendarEvents, chatMessages };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      const state: SavedState = { todayTasks, subjects, assignments, exams, studyPlan, calendarEvents, chatMessages };
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}${authUser.id}`, JSON.stringify(state));
     } catch {
       // Storage can be unavailable or full; the planner remains usable for this session.
     }
-  }, [currentPage, todayTasks, streakDays, subjects, assignments, exams, studyPlan, calendarEvents, chatMessages]);
+  }, [authUser, todayTasks, subjects, assignments, exams, studyPlan, calendarEvents, chatMessages]);
 
   // Calculate overall progress from subjects + tasks
   const totalTopics = subjects.reduce((acc, s) => acc + s.totalTopics, 0);

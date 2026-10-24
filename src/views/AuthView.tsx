@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { ArrowLeft, GraduationCap, LoaderCircle } from 'lucide-react';
+import { GraduationCap, LoaderCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { authConfigured } from '../services/appwrite';
 
 export const AuthView: React.FC = () => {
-  const { login, register, setCurrentPage } = useApp();
+  const { login, register } = useApp();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,9 +29,6 @@ export const AuthView: React.FC = () => {
   return (
     <main className="min-h-screen bg-[#0f111a] px-5 py-8 text-white flex items-center justify-center">
       <section className="w-full max-w-md">
-        <button onClick={() => setCurrentPage('landing')} className="mb-8 inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white">
-          <ArrowLeft className="h-4 w-4" /> Back to home
-        </button>
         <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-7 shadow-2xl shadow-purple-950/30 sm:p-9">
           <div className="mb-6 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-600"><GraduationCap className="h-6 w-6" /></div>

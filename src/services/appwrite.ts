@@ -93,13 +93,12 @@ async function listAllRows(tableId: string, ownerId: string) {
 function resolveOwnerId(): Promise<string> {
   if (ownerResolutionInFlight) return ownerResolutionInFlight;
   if (!account) return Promise.reject(new Error('Appwrite is not configured.'));
-  const request = (async () => {
-    try { return (await account.get()).$id; }
-    catch (error) {
-      if (!(error instanceof AppwriteException) || error.code !== 401) throw error;
-      return (await account.createAnonymousSession()).userId;
+  const request = account.get().then(user => user.$id).catch(error => {
+    if (error instanceof AppwriteException && error.code === 401) {
+      throw new Error('Sign in again to sync planner data.');
     }
-  })();
+    throw error;
+  });
   ownerResolutionInFlight = request;
   void request.finally(() => { if (ownerResolutionInFlight === request) ownerResolutionInFlight = null; }).catch(() => undefined);
   return request;
