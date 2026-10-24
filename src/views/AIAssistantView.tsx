@@ -4,17 +4,14 @@ import {
   Bot,
   Sparkles,
   Send,
-  BookOpen,
-  HelpCircle,
-  Lightbulb,
-  FileText,
-  Flame,
-  CheckCircle,
-  User
+  User,
+  Download,
+  LoaderCircle,
+  ShieldCheck,
 } from 'lucide-react';
 
 export const AIAssistantView: React.FC = () => {
-  const { chatMessages, sendMessage, isAiTyping } = useApp();
+  const { chatMessages, sendMessage, isAiTyping, studyAiStatus, studyAiProgress, studyAiError, enableStudyAi } = useApp();
   const [inputText, setInputText] = useState('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
@@ -50,14 +47,45 @@ export const AIAssistantView: React.FC = () => {
               <span>Study Helper</span>
               <Sparkles className="w-4 h-4 text-purple-600 fill-purple-600" />
             </h1>
-            <p className="text-xs text-slate-400">On-device study prompts and note helpers</p>
+            <p className="text-xs text-slate-400">Free AI study tutor that runs in your browser</p>
           </div>
         </div>
 
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-xs font-semibold">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Works locally</span>
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${studyAiStatus === 'ready' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+          <span className={`w-2 h-2 rounded-full ${studyAiStatus === 'ready' ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+          <span>{studyAiStatus === 'ready' ? 'AI ready on device' : 'Basic helper mode'}</span>
         </span>
+      </div>
+
+      <div className="my-4 rounded-2xl border border-purple-100 bg-purple-50/70 p-4 shrink-0">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="w-5 h-5 text-purple-700 mt-0.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-slate-800">
+              {studyAiStatus === 'ready' ? 'Your free on-device AI is ready' : 'Use free AI without a paid API'}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              After you enable it, this browser will load the model automatically the next time you open Study Helper. Model files download to this browser the first time and may need to download again if browser storage is cleared or you use a different website address. Your chat is processed on this device and is not sent to an AI API. The site host serves static files; AI generation uses the visitor’s device and internet, not server-side inference. If WebGPU or enough device memory is unavailable, the basic helper remains usable.
+            </p>
+            {studyAiStatus !== 'ready' && (
+              <button
+                type="button"
+                onClick={() => void enableStudyAi()}
+                disabled={studyAiStatus === 'loading'}
+                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-purple-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-wait disabled:opacity-70"
+              >
+                {studyAiStatus === 'loading' ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                {studyAiStatus === 'loading' ? 'Preparing free AI…' : studyAiStatus === 'error' ? 'Try enabling AI again' : 'Download and enable free AI'}
+              </button>
+            )}
+            {studyAiProgress && studyAiStatus === 'loading' && (
+              <p className="mt-2 text-xs text-purple-800" aria-live="polite">{studyAiProgress}</p>
+            )}
+            {studyAiError && (
+              <p className="mt-2 text-xs text-rose-700" role="status">{studyAiError} You can still use the basic helper below.</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Chat Messages Feed */}
@@ -141,11 +169,12 @@ export const AIAssistantView: React.FC = () => {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Ask for a plan, explain a topic, or paste notes to summarize..."
+            disabled={isAiTyping}
             className="w-full pl-5 pr-14 py-3.5 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-sm transition-all"
           />
           <button
             type="submit"
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || isAiTyping}
             className="absolute right-2 p-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-sm disabled:opacity-40 transition-all"
           >
             <Send className="w-4 h-4" />

@@ -21,7 +21,7 @@ interface NavItem {
 }
 
 export const Sidebar: React.FC = () => {
-  const { currentPage, setCurrentPage } = useApp();
+  const { currentPage, setCurrentPage, authUser, logout } = useApp();
 
   const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
@@ -108,16 +108,16 @@ export const Sidebar: React.FC = () => {
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white"></span>
           </div>
           <div className="flex-1 min-w-0 text-left">
-            <p className="text-xs font-bold text-slate-800 truncate">Student</p>
-            <p className="text-[11px] text-slate-400 truncate">student@mail.com</p>
+              <p className="text-xs font-bold text-slate-800 truncate">{authUser?.name || 'Guest'}</p>
+              <p className="text-[11px] text-slate-400 truncate">{authUser?.email || 'Local planner'}</p>
           </div>
-          <button
-            onClick={() => setCurrentPage('landing')}
-            title="Log out"
-            className="text-slate-400 hover:text-rose-500 transition-colors p-1"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          {authUser ? (
+            <button onClick={() => { void logout(); }} title="Log out" className="text-slate-400 hover:text-rose-500 transition-colors p-1">
+              <LogOut className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={() => setCurrentPage('auth')} className="text-xs font-semibold text-purple-600 hover:text-purple-800">Log in</button>
+          )}
         </div>
       </div>
     </aside>

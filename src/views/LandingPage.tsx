@@ -35,22 +35,15 @@ export const LandingPage: React.FC = () => {
           </span>
         </div>
 
-        <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
-          <a href="#features" className="hover:text-purple-400 transition-colors">Features</a>
-          <a href="#how-it-works" className="hover:text-purple-400 transition-colors">How it works</a>
-          <a href="#testimonials" className="hover:text-purple-400 transition-colors">Testimonials</a>
-          <a href="#faq" className="hover:text-purple-400 transition-colors">FAQ</a>
-        </nav>
-
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setCurrentPage('dashboard')}
+            onClick={() => setCurrentPage('auth')}
             className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
           >
             Login
           </button>
           <button
-            onClick={() => setCurrentPage('dashboard')}
+            onClick={() => setCurrentPage('auth')}
             className="px-5 py-2.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm shadow-lg shadow-purple-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             Get Started
@@ -86,7 +79,7 @@ export const LandingPage: React.FC = () => {
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <button
-                onClick={() => setCurrentPage('dashboard')}
+                onClick={() => setCurrentPage('auth')}
                 className="flex items-center gap-2 px-7 py-3.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm sm:text-base shadow-xl shadow-purple-600/40 transition-all hover:translate-x-0.5"
               >
                 <span>Get Started Free</span>
@@ -245,7 +238,7 @@ export const LandingPage: React.FC = () => {
             { id: 'calendar', title: '5. Calendar', desc: 'Color-coded weekly timeline & hourly blocks', icon: '🗓️' },
             { id: 'assignments', title: '6. Assignments & Exams', desc: 'Countdown badges & priority-sorted tasks', icon: '📝' },
             { id: 'progress', title: '7. Progress Analytics', desc: 'Radial gauge & subject breakdown analytics', icon: '📈' },
-            { id: 'ai-assistant', title: '8. Study Helper', desc: 'Local study prompts and simple note summaries', icon: '🤖' },
+            { id: 'ai-assistant', title: '8. Study Helper', desc: 'Free on-device AI for explanations, plans, and note summaries', icon: '🤖' },
             { id: 'landing', title: '1. Landing Page', desc: 'You are currently on the Home view', icon: '🏠' },
           ].map((item) => (
             <button

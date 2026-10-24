@@ -5,27 +5,13 @@ import {
   Search,
   Bell,
   Sparkles,
-  ChevronDown,
-  Layers,
   CheckCircle2,
   X
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { currentPage, setCurrentPage, searchQuery, setSearchQuery, subjects, todayTasks, assignments, exams, studyPlan, calendarEvents, syncStatus, syncError, retrySync } = useApp();
+  const { setCurrentPage, searchQuery, setSearchQuery, subjects, todayTasks, assignments, exams, studyPlan, calendarEvents } = useApp();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showScreenSwitcher, setShowScreenSwitcher] = useState(false);
-
-  const screens: { id: Page; label: string; tag: string }[] = [
-    { id: 'landing', label: '1. Landing Page', tag: 'Public' },
-    { id: 'dashboard', label: '2. Dashboard', tag: 'Core' },
-    { id: 'subjects', label: '3. Subjects Page', tag: 'Core' },
-    { id: 'study-plan', label: '4. Study Plan', tag: 'Plan' },
-    { id: 'calendar', label: '5. Calendar / Schedule', tag: 'Tools' },
-    { id: 'assignments', label: '6. Assignments & Exams', tag: 'Track' },
-    { id: 'progress', label: '7. Progress Analytics', tag: 'Stats' },
-    { id: 'ai-assistant', label: '8. Study Helper', tag: 'Tools' },
-  ];
   const searchResults = searchQuery.trim() ? [
     ...subjects.map(item => ({ label: item.name, detail: 'Subject', page: 'subjects' as Page })),
     ...todayTasks.map(item => ({ label: item.title, detail: 'Today’s task', page: 'dashboard' as Page })),
@@ -37,58 +23,6 @@ export const Header: React.FC = () => {
 
   return (
     <header className="h-16 bg-white border-b border-slate-100 px-6 flex items-center justify-between sticky top-0 z-20">
-      {/* Screen Switcher Badge */}
-      <div className="flex items-center gap-3">
-        <div className={`hidden lg:flex items-center gap-1.5 text-[11px] ${syncStatus === 'error' ? 'text-red-600' : syncStatus === 'connected' ? 'text-emerald-700' : 'text-slate-500'}`} title={syncError ?? undefined}>
-          <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'connected' ? 'bg-emerald-500' : syncStatus === 'error' ? 'bg-red-500' : syncStatus === 'connecting' ? 'bg-amber-400' : 'bg-slate-400'}`} />
-          <span>{syncStatus === 'connected' ? 'Synced' : syncStatus === 'connecting' ? 'Connecting' : syncStatus === 'error' ? 'Sync error' : 'Local only'}</span>
-          {syncStatus === 'error' && <button onClick={retrySync} className="underline underline-offset-2">Retry</button>}
-        </div>
-        <div className="relative">
-          <button
-            onClick={() => setShowScreenSwitcher(!showScreenSwitcher)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 text-xs font-semibold transition-all border border-purple-200"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Screen:</span>
-            <span className="capitalize">{currentPage.replace('-', ' ')}</span>
-            <ChevronDown className="w-3.5 h-3.5 opacity-60" />
-          </button>
-
-          {showScreenSwitcher && (
-            <div className="absolute left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-3 py-1.5 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Jump to any screen
-                </span>
-                <span className="text-[11px] font-semibold text-purple-600">8 Screens</span>
-              </div>
-              <div className="max-h-72 overflow-y-auto py-1">
-                {screens.map(screen => (
-                  <button
-                    key={screen.id}
-                    onClick={() => {
-                      setCurrentPage(screen.id);
-                      setShowScreenSwitcher(false);
-                    }}
-                    className={`w-full px-3 py-2 text-xs flex items-center justify-between text-left hover:bg-purple-50/70 transition-colors ${
-                      currentPage === screen.id
-                        ? 'font-bold text-purple-700 bg-purple-50/50'
-                        : 'text-slate-700'
-                    }`}
-                  >
-                    <span>{screen.label}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-normal">
-                      {screen.tag}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Center Search Input */}
       <div className="flex-1 max-w-md mx-4 relative">
         <div className="relative">

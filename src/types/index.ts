@@ -1,5 +1,6 @@
 export type Page =
   | 'landing'
+  | 'auth'
   | 'dashboard'
   | 'subjects'
   | 'assignments'

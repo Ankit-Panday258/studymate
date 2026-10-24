@@ -1,11 +1,20 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Page, Subject, TodayTask, Assignment, Exam, CalendarEvent, StudyPlanDay, ChatMessage } from '../types';
-import { appwriteConfigured, appwriteMissing, connectAndLoad, saveCollection } from '../services/appwrite';
+import { appwriteConfigured, appwriteMissing, connectAndLoad, saveCollection, getCurrentUser, loginAccount, registerAccount, logoutAccount } from '../services/appwrite';
+import type { AuthUser } from '../services/appwrite';
+import { generateStudyReply, loadLocalStudyModel } from '../services/localAi';
+
+type StudyAiStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 interface AppContextType {
   syncStatus: 'local' | 'connecting' | 'connected' | 'error';
   syncError: string | null;
   retrySync: () => void;
+  authUser: AuthUser | null;
+  authLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
   searchQuery: string;
@@ -54,6 +63,10 @@ interface AppContextType {
   chatMessages: ChatMessage[];
   sendMessage: (text: string) => void;
   isAiTyping: boolean;
+  studyAiStatus: StudyAiStatus;
+  studyAiProgress: string;
+  studyAiError: string | null;
+  enableStudyAi: () => Promise<void>;
 
   // Stats
   overallProgress: number;
@@ -154,7 +167,7 @@ const initialChatMessages: ChatMessage[] = [
   {
     id: 'm1',
     role: 'assistant',
-    content: "Hi! I'm your StudyMate study helper 👋\nI can help you build study routines, explain a learning method, and extract key sentences from notes you paste here. This runs locally with simple rules, not an AI service. What would you like to work on?",
+    content: "Hi! I'm your StudyMate study helper 👋\nEnable free on-device AI for explanations, study plans, note summaries, and practice questions. Your chat stays in this browser; the model is downloaded once before first use.",
     timestamp: 'Just now',
     prompts: [
       'Create a study plan for my exams',
@@ -166,7 +179,35 @@ const initialChatMessages: ChatMessage[] = [
   },
 ];
 
+function createBasicStudyReply(text: string, subjects: Subject[], exams: Exam[]): string {
+  const lower = text.toLowerCase();
+  let reply = `Try one focused 25-minute session for ${subjects[0]?.name ?? 'your current subject'}, then take a 5-minute break. Tell me a topic or paste notes and I can help make a study prompt.`;
+
+  if (/\b(?:plan|planning|schedule|exam|exams)\b/.test(lower)) {
+    const nextExam = [...exams].sort((a, b) => Date.parse(a.date) - Date.parse(b.date))[0];
+    const daysLeft = nextExam ? Math.max(0, Math.ceil((Date.parse(nextExam.date) - Date.now()) / 86400000)) : 0;
+    reply = nextExam
+      ? `Your next listed exam is ${nextExam.title} (${daysLeft} days left). Start with priority topics: use a short recall session, practice questions, then review errors. Open Study Plan to build a subject-based week.`
+      : 'Add an exam and its date in Assignments & Exams, then use Study Plan to create a focused revision week.';
+  } else if (/\b(?:summarize|summarise|summary)\b/.test(lower)) {
+    const passage = text.replace(/summari[sz]e|summary|this topic|these notes/ig, '').replace(/[:\n]/g, ' ').trim();
+    const sentences = passage.match(/[^.!?]+[.!?]?/g)?.map(sentence => sentence.trim()).filter(Boolean) ?? [];
+    reply = sentences.length > 1
+      ? `Key points from your text:\n• ${sentences.slice(0, 4).join('\n• ')}\n\nThis is a basic sentence extraction; compare it with your source notes.`
+      : 'Paste a paragraph or notes after “summarize” and I can extract the main sentences.';
+  } else if (/\b(?:explain|concept)\b/.test(lower)) {
+    const topic = text.replace(/explain|concept|please/ig, '').trim() || 'your topic';
+    reply = `Try the Feynman method for ${topic}: explain it in plain language, find the first step you cannot explain, review that part, then explain it again without notes.`;
+  } else if (/\b(?:practice|question|questions|quiz)\b/.test(lower)) {
+    const topic = text.replace(/generate|practice|questions?|for/ig, '').trim() || subjects[0]?.name || 'your topic';
+    reply = `Practice prompts for ${topic}:\n1. Define the central idea without notes.\n2. Solve one representative problem and show each step.\n3. Give a real-world example and explain one common mistake.`;
+  }
+
+  return reply;
+}
+
 const STORAGE_KEY = 'studymate:v1';
+const STUDY_AI_OPT_IN_KEY = 'studymate:study-ai-opt-in';
 type SavedState = {
   currentPage: Page; todayTasks: TodayTask[]; streakDays: number; subjects: Subject[];
   assignments: Assignment[]; exams: Exam[]; studyPlan: StudyPlanDay[];
@@ -187,6 +228,8 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [savedState] = useState(readSavedState);
   const [currentPage, setCurrentPage] = useState<Page>(savedState.currentPage ?? 'dashboard');
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
   const [todayTasks, setTodayTasks] = useState<TodayTask[]>(savedState.todayTasks ?? initialTodayTasks);
@@ -202,6 +245,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(savedState.chatMessages ?? initialChatMessages);
   const [isAiTyping, setIsAiTyping] = useState(false);
+  const [studyAiStatus, setStudyAiStatus] = useState<StudyAiStatus>('idle');
+  const [studyAiProgress, setStudyAiProgress] = useState('');
+  const [studyAiError, setStudyAiError] = useState<string | null>(null);
+  const studyAiInitializationStarted = useRef(false);
   const [syncStatus, setSyncStatus] = useState<'local' | 'connecting' | 'connected' | 'error'>(appwriteConfigured ? 'connecting' : 'local');
   const [syncError, setSyncError] = useState<string | null>(appwriteConfigured ? null : `Local only. Missing Appwrite settings: ${appwriteMissing.join(', ')}`);
   const [syncRevision, setSyncRevision] = useState(0);
@@ -210,6 +257,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const lastConnectedOwner = useRef<string | null>(null);
 
   const retrySync = () => setSyncRevision(value => value + 1);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentUser()
+      .then(user => { if (!cancelled) setAuthUser(user); })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setAuthLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    const user = await loginAccount(email, password);
+    setAuthUser(user);
+    setCurrentPage('dashboard');
+    retrySync();
+  };
+
+  const register = async (name: string, email: string, password: string) => {
+    const user = await registerAccount(name, email, password);
+    setAuthUser(user);
+    setCurrentPage('dashboard');
+    retrySync();
+  };
+
+  const logout = async () => {
+    await logoutAccount();
+    setAuthUser(null);
+    setCurrentPage('landing');
+    retrySync();
+  };
 
   useEffect(() => {
     if (!appwriteConfigured) return;
@@ -434,8 +511,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteCalendarEvent = (id: string) => setCalendarEvents(prev => prev.filter(event => event.id !== id));
 
+  const enableStudyAi = async () => {
+    if (studyAiInitializationStarted.current || studyAiStatus === 'loading' || studyAiStatus === 'ready') return;
+    studyAiInitializationStarted.current = true;
+    setStudyAiStatus('loading');
+    setStudyAiError(null);
+    setStudyAiProgress('Preparing the model…');
+    try {
+      await loadLocalStudyModel(setStudyAiProgress);
+      try {
+        localStorage.setItem(STUDY_AI_OPT_IN_KEY, 'true');
+      } catch {
+        // Keep the AI available for this session if browser storage is unavailable.
+      }
+      setStudyAiStatus('ready');
+      setStudyAiProgress('Model ready on this device.');
+    } catch (error) {
+      studyAiInitializationStarted.current = false;
+      setStudyAiStatus('error');
+      setStudyAiError(error instanceof Error ? error.message : 'Could not load the on-device model.');
+      setStudyAiProgress('');
+    }
+  };
+
+  useEffect(() => {
+    if (currentPage !== 'ai-assistant') return;
+    try {
+      if (localStorage.getItem(STUDY_AI_OPT_IN_KEY) === 'true') void enableStudyAi();
+    } catch {
+      // The user can still enable the model manually for this session.
+    }
+  }, [currentPage]);
+
   const sendMessage = (text: string) => {
-    if (!text.trim()) return;
+    if (!text.trim() || isAiTyping) return;
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -446,45 +555,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setChatMessages(prev => [...prev, userMsg]);
     setIsAiTyping(true);
-
-    setTimeout(() => {
-      let reply = `Here's a practical next step: pick one small task for ${subjects[0]?.name ?? 'your current subject'}, work for 25 minutes, then take a 5-minute break. Add your topic or paste notes and I can help turn them into a study prompt. This helper works locally and doesn't connect to an AI service.`;
-      const lower = text.toLowerCase();
-
-      if (/\b(?:plan|planning|schedule|exam|exams)\b/.test(lower)) {
-        const nextExam = [...exams].sort((a, b) => Date.parse(a.date) - Date.parse(b.date))[0];
-        const daysLeft = nextExam ? Math.max(0, Math.ceil((Date.parse(nextExam.date) - Date.now()) / 86400000)) : 0;
-        reply = nextExam ? `Your next listed exam is ${nextExam.title} (${daysLeft} days left). Study ${Math.max(1, Math.min(3, Math.ceil(daysLeft / 3)))} priority topics first: use a short recall session, practice questions, then review errors. Open Study Plan to build a subject-based week.` : 'Add an exam and its date in Assignments & Exams, then use Study Plan to create a focused revision week.';
-      } else if (/\b(?:summarize|summarise|summary)\b/.test(lower)) {
-        const passage = text.replace(/summari[sz]e|summary|this topic|these notes/ig, '').replace(/[:\n]/g, ' ').trim();
-        const sentences = passage.match(/[^.!?]+[.!?]?/g)?.map(s => s.trim()).filter(Boolean) ?? [];
-        reply = sentences.length > 1 ? `Key points from your text:\n• ${sentences.slice(0, 4).join('\n• ')}\n\nThis is a simple on-device extraction; check it against your source notes.` : 'Paste a paragraph or your notes after “summarize” and I’ll extract the main sentences locally.';
-      } else if (/\b(?:explain|concept)\b/.test(lower)) {
-        const topic = text.replace(/explain|concept|please/ig, '').trim() || 'your topic';
-        reply = `Try the Feynman method for ${topic}: write what you think it means in plain language, identify the first step you can't explain, review only that part, then explain it again without notes. What example from your class could you use to test your explanation?`;
-      } else if (/\b(?:practice|question|questions|quiz)\b/.test(lower)) {
-        const topic = text.replace(/generate|practice|questions?|for/ig, '').trim() || subjects[0]?.name || 'your topic';
-        reply = `Practice prompts for ${topic}:\n1. Define the central idea without looking at your notes.\n2. Solve one representative problem and show every step.\n3. Give a real-world example, then explain one common mistake.\n\nThese are generic prompts; add a chapter name or paste a topic to focus them.`;
-      } else if (/\b(?:consistent|consistency|habit|streak)\b/.test(lower)) {
-        reply = "You're already on a 7-day study streak! 🔥 To maintain momentum:\n• Never miss two days in a row.\n• Start each study session with the easiest 5-minute task.\n• Set a consistent time block on your calendar every day.";
+    const conversation = [...chatMessages, userMsg];
+    const recentConversation = conversation.slice(-10).map(({ role, content }) => ({ role, content }));
+    void (async () => {
+      let reply: string;
+      try {
+        reply = studyAiStatus === 'ready'
+          ? await generateStudyReply(recentConversation)
+          : createBasicStudyReply(text, subjects, exams);
+      } catch {
+        reply = `${createBasicStudyReply(text, subjects, exams)}\n\nThe local AI could not answer this time, so this is the basic helper response.`;
       }
-
-      const botMsg: ChatMessage = {
+      setChatMessages(prev => [...prev, {
         id: `msg-ai-${Date.now()}`,
         role: 'assistant',
         content: reply,
         timestamp: 'Just now',
-      };
-
-      setChatMessages(prev => [...prev, botMsg]);
+      }]);
       setIsAiTyping(false);
-    }, 700);
+    })();
   };
 
   return (
     <AppContext.Provider
       value={{
         syncStatus, syncError, retrySync,
+        authUser, authLoading, login, register, logout,
         currentPage,
         setCurrentPage,
         searchQuery,
@@ -517,6 +613,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         chatMessages,
         sendMessage,
         isAiTyping,
+        studyAiStatus,
+        studyAiProgress,
+        studyAiError,
+        enableStudyAi,
         overallProgress,
       }}
     >

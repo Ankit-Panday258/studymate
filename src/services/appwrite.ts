@@ -18,13 +18,49 @@ const tables: Record<Collection,string> = {
 const required = [env.VITE_APPWRITE_ENDPOINT, env.VITE_APPWRITE_PROJECT_ID, env.VITE_APPWRITE_DATABASE_ID, ...collectionNames.map(k => tables[k])];
 export const appwriteConfigured = required.every(Boolean);
 export const appwriteMissing = [names.endpoint,names.project,names.database,...collectionNames.map(k => names[k])].filter((_, i) => !required[i]);
+export const authConfigured = Boolean(env.VITE_APPWRITE_ENDPOINT && env.VITE_APPWRITE_PROJECT_ID);
 
-const client = appwriteConfigured ? new Client().setEndpoint(env.VITE_APPWRITE_ENDPOINT).setProject(env.VITE_APPWRITE_PROJECT_ID) : null;
+const client = authConfigured ? new Client().setEndpoint(env.VITE_APPWRITE_ENDPOINT).setProject(env.VITE_APPWRITE_PROJECT_ID) : null;
 const account = client ? new Account(client) : null;
-const db = client ? new TablesDB(client) : null;
+const db = appwriteConfigured && client ? new TablesDB(client) : null;
 let ownerResolutionInFlight: Promise<string> | null = null;
 export type PlannerData = { subjects: Subject[]; todayTasks: TodayTask[]; assignments: Assignment[]; exams: Exam[]; calendarEvents: CalendarEvent[]; studyPlan: StudyPlanDay[] };
 export type SyncState = Pick<PlannerData, 'subjects'|'todayTasks'|'assignments'|'exams'|'calendarEvents'|'studyPlan'>;
+export type AuthUser = { id: string; name: string; email: string };
+
+function requireAccount(): Account {
+  if (!account) throw new Error('Add VITE_APPWRITE_ENDPOINT and VITE_APPWRITE_PROJECT_ID to .env.local to enable accounts.');
+  return account;
+}
+
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  try {
+    const user = await requireAccount().get();
+    return { id: user.$id, name: user.name, email: user.email };
+  } catch (error) {
+    if (error instanceof AppwriteException && error.code === 401) return null;
+    throw error;
+  }
+}
+
+export async function registerAccount(name: string, email: string, password: string): Promise<AuthUser> {
+  const service = requireAccount();
+  await service.create(ID.unique(), email, password, name);
+  await service.createEmailPasswordSession(email, password);
+  const user = await service.get();
+  return { id: user.$id, name: user.name, email: user.email };
+}
+
+export async function loginAccount(email: string, password: string): Promise<AuthUser> {
+  const service = requireAccount();
+  await service.createEmailPasswordSession(email, password);
+  const user = await service.get();
+  return { id: user.$id, name: user.name, email: user.email };
+}
+
+export async function logoutAccount(): Promise<void> {
+  await requireAccount().deleteSession('current');
+}
 const toData = (key: Collection, value: unknown): Record<string, unknown> => {
   if (key === 'studyPlan') {
     const { id, tasks, ...day } = value as StudyPlanDay;

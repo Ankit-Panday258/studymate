@@ -10,12 +10,23 @@ import { CalendarView } from './views/CalendarView';
 import { AssignmentsExamsView } from './views/AssignmentsExamsView';
 import { ProgressView } from './views/ProgressView';
 import { AIAssistantView } from './views/AIAssistantView';
+import { AuthView } from './views/AuthView';
 
 const MainContent: React.FC = () => {
-  const { currentPage } = useApp();
+  const { currentPage, authUser, authLoading } = useApp();
+
+  if (authLoading) {
+    return <div className="min-h-screen bg-[#0f111a] flex items-center justify-center text-sm font-medium text-slate-300">Checking your account…</div>;
+  }
 
   if (currentPage === 'landing') {
     return <LandingPage />;
+  }
+  if (currentPage === 'auth') {
+    return <AuthView />;
+  }
+  if (!authUser) {
+    return <AuthView />;
   }
 
   const renderActiveView = () => {
